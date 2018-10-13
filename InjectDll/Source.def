@@ -1,0 +1,3 @@
+LIBRARY InjectDll32
+EXPORTS
+	DetourFinishHelperProcess	@1
