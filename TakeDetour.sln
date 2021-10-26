@@ -1,43 +1,35 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.28010.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31729.503
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TakeDetour", "TakeDetour\TakeDetour.vcxproj", "{275575D6-7FA1-42CB-9119-BCC3C548989A}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "takedetour", "takedetour\takedetour.vcxproj", "{275575D6-7FA1-42CB-9119-BCC3C548989A}"
 	ProjectSection(ProjectDependencies) = postProject
-		{202EF952-2AF9-45D7-A7D2-CF08C16EAE1E} = {202EF952-2AF9-45D7-A7D2-CF08C16EAE1E}
 		{82864E7A-BBCC-47E5-9A85-A6999B1B1560} = {82864E7A-BBCC-47E5-9A85-A6999B1B1560}
 		{9BB3F6F3-87B1-4541-A709-2C80967C97EE} = {9BB3F6F3-87B1-4541-A709-2C80967C97EE}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InjectDll", "InjectDll\InjectDll.vcxproj", "{9BB3F6F3-87B1-4541-A709-2C80967C97EE}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "injectdll32", "injectdll32\injectdll32.vcxproj", "{9BB3F6F3-87B1-4541-A709-2C80967C97EE}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InjectDll64", "InjectDll64\InjectDll64.vcxproj", "{82864E7A-BBCC-47E5-9A85-A6999B1B1560}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TakeDetour64", "TakeDetour64\TakeDetour64.vcxproj", "{202EF952-2AF9-45D7-A7D2-CF08C16EAE1E}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "injectdll64", "injectdll64\injectdll64.vcxproj", "{82864E7A-BBCC-47E5-9A85-A6999B1B1560}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x86 = Debug|x86
-		Release|x86 = Release|x86
+		Debug|Main = Debug|Main
+		Release|Main = Release|Main
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Debug|x86.ActiveCfg = Debug|Win32
-		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Debug|x86.Build.0 = Debug|Win32
-		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Release|x86.ActiveCfg = Release|Win32
-		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Release|x86.Build.0 = Release|Win32
-		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Debug|x86.ActiveCfg = Debug|Win32
-		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Debug|x86.Build.0 = Debug|Win32
-		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Release|x86.ActiveCfg = Release|Win32
-		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Release|x86.Build.0 = Release|Win32
-		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Debug|x86.ActiveCfg = Debug|x64
-		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Debug|x86.Build.0 = Debug|x64
-		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Release|x86.ActiveCfg = Release|x64
-		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Release|x86.Build.0 = Release|x64
-		{202EF952-2AF9-45D7-A7D2-CF08C16EAE1E}.Debug|x86.ActiveCfg = Debug|x64
-		{202EF952-2AF9-45D7-A7D2-CF08C16EAE1E}.Debug|x86.Build.0 = Debug|x64
-		{202EF952-2AF9-45D7-A7D2-CF08C16EAE1E}.Release|x86.ActiveCfg = Release|x64
-		{202EF952-2AF9-45D7-A7D2-CF08C16EAE1E}.Release|x86.Build.0 = Release|x64
+		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Debug|Main.ActiveCfg = Debug|x64
+		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Debug|Main.Build.0 = Debug|x64
+		{275575D6-7FA1-42CB-9119-BCC3C548989A}.Release|Main.ActiveCfg = Release|x64
+		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Debug|Main.ActiveCfg = Debug|Win32
+		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Debug|Main.Build.0 = Debug|Win32
+		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Release|Main.ActiveCfg = Release|Win32
+		{9BB3F6F3-87B1-4541-A709-2C80967C97EE}.Release|Main.Build.0 = Release|Win32
+		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Debug|Main.ActiveCfg = Debug|x64
+		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Debug|Main.Build.0 = Debug|x64
+		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Release|Main.ActiveCfg = Release|x64
+		{82864E7A-BBCC-47E5-9A85-A6999B1B1560}.Release|Main.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,206 +1,166 @@
 #include <Windows.h>
 #include <Psapi.h>
 #include <cassert>
-#include <cinttypes>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <locale>
-#include <codecvt>
-#include <memory>
+#include <vector>
+#include <stdexcept>
 
+#include <detours.h>
+#include <wil/result.h>
 #include "Detouring.h"
-#include "../include/detours.h"
 
-using namespace std;
-
-string ws2s(const std::wstring& wstr)
+namespace takedetour
 {
-    using convert_typeX = std::codecvt_utf8<wchar_t>;
-    std::wstring_convert<convert_typeX, wchar_t> converterX;
-
-    return converterX.to_bytes(wstr);
-}
-
-//----------------------------------------------------------------
-
-void ThrowWin32Exception(const char *funcname)
-{
-    DWORD dwError = GetLastError();
-    ostringstream os;
-    os << funcname << " failed: 0x" << hex << dwError << endl;
-    throw exception(os.str().c_str());
-}
-
-//----------------------------------------------------------------
-
-HANDLE StartProcess(const string& injectdll, const wstring& exe, const wstring& args)
-{
-    STARTUPINFO si;
-    PROCESS_INFORMATION pi;
-
-    ZeroMemory(&si, sizeof(si));
-    ZeroMemory(&pi, sizeof(pi));
-    si.cb = sizeof(si);
-
-    auto command = make_unique<wchar_t[]>(args.length() + 1);
-    wmemcpy_s(command.get(), args.length(), args.c_str(), args.length());
-    command.get()[args.length()] = L'\0';
-
-    if (!DetourCreateProcessWithDllEx(exe.c_str(), command.get(),
-        NULL, NULL, TRUE,
-        CREATE_DEFAULT_ERROR_MODE | CREATE_SUSPENDED,
-        NULL, NULL, &si, &pi, injectdll.c_str(), NULL)) {
-        ThrowWin32Exception("DetourCreateProcessWithDllEx");
-    }
-
-    ResumeThread(pi.hThread);
-    CloseHandle(pi.hThread);
-
-    return pi.hProcess;
-}
-
-//----------------------------------------------------------------
-
-BOOL CALLBACK EnumerateExportCallback(PVOID pContext, ULONG nOrdinal, LPCSTR pszName, PVOID pCode)
-{
-    FunctionCharacteristics* func = reinterpret_cast<FunctionCharacteristics*>(pContext);
-    if (strcmp(func->FunctionName, pszName) == 0) {
-        *(func->FunctionAddress) = pCode;
-        return FALSE;
-    }
-    return TRUE;
-}
-
-//----------------------------------------------------------------
-
-HMODULE LocateModuleInRemoteProcess(HANDLE hProcess, const wstring& modulePath)
-{
-    HMODULE modules[1024];
-    DWORD cb = sizeof(modules);
-    DWORD requiredcb;
-    if (!EnumProcessModules(hProcess, modules, cb, &requiredcb)) {
-        ThrowWin32Exception("EnumProcessModules");
-    }
-
-    if (requiredcb > cb) {
-        throw exception("EnumProcessModules failed: the modules buffer was too small.");
-    }
-
-    for (DWORD i = 0; i < requiredcb / sizeof(HMODULE); i++) {
-        wchar_t moduleName[MAX_PATH];
-        DWORD moduleNameLength = GetModuleFileNameEx(hProcess, modules[i], moduleName, sizeof(moduleName) / sizeof(wchar_t));
-        // FIXME: if moduleNameLength == MAX_PATH there is chance the module name array was too small
-        if (moduleNameLength == 0) {
-            ThrowWin32Exception("GetModuleFileNameEx");
+    // helper functions
+    std::string ws2s(const std::wstring& wstr)
+    {
+        auto len = ::WideCharToMultiByte(CP_OEMCP, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+        if (len == 0) {
+            THROW_LAST_ERROR_MSG("Error converting '%ws' to multibyte", wstr.c_str());
         }
-        if (moduleNameLength >= modulePath.length()
-            && _wcsicmp(modulePath.c_str(), moduleName + moduleNameLength - modulePath.length()) == 0) {
-            return modules[i];
+
+        std::vector<char> out(len);
+        if (len != ::WideCharToMultiByte(CP_OEMCP, 0, wstr.c_str(), -1, out.data(), static_cast<int>(out.size()), NULL, NULL)) {
+            THROW_LAST_ERROR_MSG("Error converting '%ws' to multibyte (invalid len)", wstr.c_str());
         }
-    }
-    return NULL;
-}
 
-//----------------------------------------------------------------
-
-// Return address of the LoadLibrary function in the remote process
-PVOID LocateExportedFunctionInModule(HMODULE moduleHandle, const char* functionName)
-{
-    // we found the kernel32.dll
-    PVOID functionAddress = nullptr;
-    FunctionCharacteristics context = { functionName, &functionAddress };
-    if (!DetourEnumerateExports(moduleHandle, &context, EnumerateExportCallback)) {
-        ThrowWin32Exception("DetourEnumerateExports");
-    }
-    return functionAddress;
-}
-
-//----------------------------------------------------------------
-
-HANDLE AttachToProcess(DWORD pid, const wstring& injectdll)
-{
-    DWORD flags = PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
-        PROCESS_VM_WRITE | PROCESS_VM_READ | SYNCHRONIZE;
-    HANDLE targetProcess = OpenProcess(flags, FALSE, pid);
-    if (targetProcess == NULL) {
-        ThrowWin32Exception("OpenProcess");
+        return std::string{ out.begin(), out.end() };
     }
 
-    HMODULE kernel32 = LocateModuleInRemoteProcess(targetProcess, L"\\kernel32.dll");
-    if (!kernel32) {
-        throw exception("Can't find kernel32.dll in the remote process.");
+    HMODULE locate_module_in_process(const HANDLE hProcess, const std::wstring& module_name)
+    {
+        HMODULE modules[1024];
+        DWORD cb = sizeof(modules);
+        DWORD requiredcb;
+
+        THROW_IF_WIN32_BOOL_FALSE(::EnumProcessModules(hProcess, modules, cb, &requiredcb));
+
+        if (requiredcb > cb) {
+            throw std::runtime_error{ "EnumProcessModules failed: the modules buffer was too small." };
+        }
+
+        wchar_t name[MAX_PATH];
+        for (DWORD i = 0; i < requiredcb / sizeof(HMODULE); i++) {
+            DWORD len = ::GetModuleBaseName(hProcess, modules[i], name, MAX_PATH);
+            if (len == 0) {
+                continue;
+            }
+
+            if (module_name.compare(0, len, name) == 0) {
+                return modules[i];
+            }
+        }
+
+        return NULL;
     }
 
-    PVOID LoadLibraryWAddress = LocateExportedFunctionInModule(kernel32, "LoadLibraryW");
-    assert(LoadLibraryWAddress != NULL);
+    PVOID locate_exported_function(HMODULE module_handle, const char* function_name)
+    {
+        PF_DETOUR_ENUMERATE_EXPORT_CALLBACK callback = [](PVOID pContext, ULONG nOrdinal, LPCSTR pszName, PVOID pCode) {
+            auto func = reinterpret_cast<FunctionCharacteristics*>(pContext);
+            if (strcmp(func->FunctionName, pszName) == 0) {
+                *(func->FunctionAddress) = pCode;
+                return FALSE;
+            }
+            return TRUE;
+        };
 
-    // allocate injection buffer
-    SIZE_T injectdllLengthInBytes = (injectdll.length() + 1) * sizeof(wchar_t);
-    PBYTE injectionBuffer = (PBYTE)VirtualAllocEx(targetProcess, NULL, injectdllLengthInBytes,
-        MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    if (!injectionBuffer) {
-        ThrowWin32Exception("VirtualAllocEx");
-    }
-    SIZE_T n;
-    if (!WriteProcessMemory(targetProcess, injectionBuffer, injectdll.c_str(), injectdllLengthInBytes, &n)
-        || n != injectdllLengthInBytes) {
-        ThrowWin32Exception("WriteProcessMemory");
-    }
-
-    HANDLE injectedThread;
-    DWORD injecteeThreadId;
-    injectedThread = CreateRemoteThread(targetProcess, NULL, 0, (LPTHREAD_START_ROUTINE)LoadLibraryWAddress,
-        injectionBuffer, 0, &injecteeThreadId);
-    if (!injectedThread) {
-        ThrowWin32Exception("CreateRemoteThread");
+        PVOID function_address{};
+        FunctionCharacteristics context{ function_name, &function_address };
+        THROW_IF_WIN32_BOOL_FALSE(::DetourEnumerateExports(module_handle, &context, callback));
+        return function_address;
     }
 
-    if (WaitForSingleObject(injectedThread, INFINITE) == WAIT_FAILED) {
-        ThrowWin32Exception("WaitForSingleObject (remote thread)");
-    }
-    CloseHandle(injectedThread);
+    HANDLE start_process(const std::wstring& injectdll, const std::wstring& exe, const std::wstring& args)
+    {
+        ::STARTUPINFO si;
+        ::PROCESS_INFORMATION pi;
 
-    if (!VirtualFreeEx(targetProcess, injectionBuffer, 0, MEM_RELEASE)) {
-        ThrowWin32Exception("VirtualFreeEx");
-    }
+        ::ZeroMemory(&si, sizeof(si));
+        ::ZeroMemory(&pi, sizeof(pi));
+        si.cb = sizeof(si);
 
-    return targetProcess;
-}
+        std::vector v(args.begin(), args.end());
+        THROW_IF_WIN32_BOOL_FALSE(
+            ::DetourCreateProcessWithDllEx(exe.c_str(), v.size() == 0 ? NULL : v.data(), NULL, NULL, TRUE,
+                CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED, NULL, NULL, &si, &pi,
+                ws2s(injectdll).c_str(), NULL));
 
-//----------------------------------------------------------------
+        ::ResumeThread(pi.hThread);
+        ::CloseHandle(pi.hThread);
 
-void DetachFromProcess(HANDLE targetProcess, const wstring& injectdll)
-{
-    HMODULE modules[1024];
-    DWORD cb = sizeof(modules);
-    DWORD requiredcb;
-    if (!EnumProcessModules(targetProcess, modules, cb, &requiredcb)) {
-        ThrowWin32Exception("EnumProcessModules");
+        return pi.hProcess;
     }
 
-    HMODULE kernel32 = LocateModuleInRemoteProcess(targetProcess, L"\\kernel32.dll");
-    if (!kernel32) {
-        throw exception("Can't find kernel32.dll in the remote process.");
-    }
-    PVOID FreeLibraryAddress = LocateExportedFunctionInModule(kernel32, "FreeLibrary");
-    assert(FreeLibraryAddress != NULL);
+    HANDLE attach_to_process(DWORD pid, const std::wstring& injectdll)
+    {
+        DWORD flags = PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
+            PROCESS_VM_WRITE | PROCESS_VM_READ | SYNCHRONIZE;
+        auto process_handle = ::OpenProcess(flags, FALSE, pid);
+        THROW_LAST_ERROR_IF_NULL(process_handle);
 
-    HMODULE injectdllHandle = LocateModuleInRemoteProcess(targetProcess, injectdll);
-    if (injectdllHandle == NULL) {
-        throw exception("Can't find the injected dll in the remote process.");
+        auto kernel32 = locate_module_in_process(process_handle, L"\\kernel32.dll");
+        if (!kernel32) {
+            throw std::runtime_error{ "Can't find kernel32.dll in the remote process." };
+        }
+
+        PVOID fn_LoadLibraryWAddress = locate_exported_function(kernel32, "LoadLibraryW");
+        assert(fn_LoadLibraryWAddress != NULL);
+
+        // allocate injection buffer
+        SIZE_T injectdll_len_in_bytes = injectdll.length() * sizeof(wchar_t);
+        PBYTE injection_buffer = (PBYTE)::VirtualAllocEx(process_handle, NULL, injectdll_len_in_bytes,
+            MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        THROW_LAST_ERROR_IF_NULL(injection_buffer);
+
+        THROW_IF_WIN32_BOOL_FALSE(::WriteProcessMemory(process_handle, injection_buffer,
+            injectdll.c_str(), injectdll_len_in_bytes, NULL));
+
+        DWORD thread_id{};
+        wil::unique_handle injected_thread{ ::CreateRemoteThread(process_handle, NULL, 0, (LPTHREAD_START_ROUTINE)fn_LoadLibraryWAddress,
+            injection_buffer, 0, &thread_id) };
+        if (!injected_thread.is_valid()) {
+            THROW_LAST_ERROR_MSG("CreateRemoteThread");
+        }
+
+        THROW_LAST_ERROR_IF_MSG(::WaitForSingleObject(injected_thread.get(), INFINITE) == WAIT_FAILED, "WaitForSingleObject (remote thread)");
+
+        LOG_IF_WIN32_BOOL_FALSE(::VirtualFreeEx(process_handle, injection_buffer, 0, MEM_RELEASE));
+
+        return process_handle;
     }
 
-    HANDLE injectedThread;
-    DWORD injecteeThreadId;
-    injectedThread = CreateRemoteThread(targetProcess, NULL, 0, (LPTHREAD_START_ROUTINE)FreeLibraryAddress,
-        injectdllHandle, 0, &injecteeThreadId);
-    if (!injectedThread) {
-        ThrowWin32Exception("CreateRemoteThread");
-    }
+    void detach_from_process(HANDLE process_handle)
+    {
+        HMODULE modules[1024];
+        DWORD cb = sizeof(modules);
+        DWORD requiredcb;
 
-    if (WaitForSingleObject(injectedThread, INFINITE) == WAIT_FAILED) {
-        ThrowWin32Exception("WaitForSingleObject (remote thread)");
+        THROW_IF_WIN32_BOOL_FALSE(::EnumProcessModules(process_handle, modules, cb, &requiredcb));
+
+        HMODULE kernel32 = locate_module_in_process(process_handle, L"kernel32.dll");
+        if (!kernel32) {
+            throw std::runtime_error{ "Can't find kernel32.dll in the remote process." };
+        }
+        PVOID fn_FreeLibrary = locate_exported_function(kernel32, "FreeLibrary");
+        assert(fn_FreeLibrary != NULL);
+
+        HMODULE injectdll = locate_module_in_process(process_handle, L"injectdll64.dll");
+        if (injectdll == NULL) {
+            HMODULE injectdll = locate_module_in_process(process_handle, L"injectdll32.dll");
+            if (injectdll == NULL) {
+                throw std::runtime_error("Can't find the injected dll in the remote process.");
+            }
+        }
+
+        DWORD thread_id{};
+        wil::unique_handle injected_thread{ ::CreateRemoteThread(process_handle, NULL, 0, (LPTHREAD_START_ROUTINE)fn_FreeLibrary, injectdll, 0, &thread_id) };
+        if (!injected_thread.is_valid()) {
+            THROW_LAST_ERROR_MSG("CreateRemoteThread (detach)");
+        }
+
+        THROW_LAST_ERROR_IF_MSG(::WaitForSingleObject(injected_thread.get(), INFINITE) == WAIT_FAILED, "WaitForSingleObject (detach)");
     }
-    CloseHandle(injectedThread);
 }
