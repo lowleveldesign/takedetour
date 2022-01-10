@@ -7,7 +7,7 @@
 #include <vector>
 #include <stdexcept>
 
-#include <detours.h>
+#include <detours/detours.h>
 #include <wil/result.h>
 #include "Detouring.h"
 
