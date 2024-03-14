@@ -110,7 +110,7 @@ namespace takedetour
         assert(fn_LoadLibraryWAddress != NULL);
 
         // allocate injection buffer
-        SIZE_T injectdll_len_in_bytes = injectdll.length() * sizeof(wchar_t);
+        SIZE_T injectdll_len_in_bytes = (injectdll.length() + 1) * sizeof(wchar_t);
         PBYTE injection_buffer = (PBYTE)::VirtualAllocEx(process_handle, NULL, injectdll_len_in_bytes,
             MEM_COMMIT, PAGE_EXECUTE_READWRITE);
         THROW_LAST_ERROR_IF_NULL(injection_buffer);
